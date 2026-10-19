@@ -1,1 +1,33 @@
-
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Canvas • Assignment Dashboard</title>
+  <style>
+    :root{font-family:Inter,system-ui,-apple-system,Segoe UI,sans-serif;color:#e8edf6;background:#0c1019;color-scheme:dark}
+    *{box-sizing:border-box}body{margin:0}main{max-width:1120px;margin:0 auto;padding:42px 22px 80px}
+    header{display:flex;align-items:center;justify-content:space-between;gap:20px;flex-wrap:wrap}h1{font-size:32px;letter-spacing:-.05em;margin:0 0 6px}p{color:#98a7bd;margin:0}
+    button,select,input{background:#1a2435;color:#e8edf6;border:1px solid #36445d;border-radius:10px;padding:11px 12px;font:inherit}button{cursor:pointer;background:#dbeafe;color:#14233c;font-weight:700}button:hover{background:#fff}
+    .stats{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:30px 0}.stat,.panel{background:#141d2b;border:1px solid #29364a;border-radius:16px}.stat{padding:20px}.stat strong{display:block;font-size:30px;letter-spacing:-.05em}.stat span{font-size:13px;color:#9bacbf}
+    .controls{display:flex;gap:10px;flex-wrap:wrap;margin:20px 0}.controls input{flex:1;min-width:200px}.panel{overflow:hidden}.heading,.assignment{display:grid;grid-template-columns:1.4fr 1fr 170px 120px;gap:12px;align-items:center;padding:15px 20px}.heading{background:#192437;color:#9bacbf;font-size:12px;text-transform:uppercase;letter-spacing:.08em}.assignment{border-top:1px solid #27364a}.assignment:hover{background:#1d2a3e}.assignment a{color:#e8edf6;text-decoration:none;font-weight:600}.assignment a:hover{text-decoration:underline}.course{color:#9bacbf}.due{font-variant-numeric:tabular-nums}.pill{font-size:12px;padding:6px 9px;border-radius:100px;background:#30405c;display:inline-block;width:max-content}.overdue{background:#64313c;color:#ffd2d7}.soon{background:#5c4927;color:#ffe2a3}.done{background:#224e43;color:#b4f2d5}.muted{color:#889ab0}.empty{padding:35px;color:#9bacbf;text-align:center}.error{color:#ffbfc7;margin:15px 0;white-space:pre-wrap}#timestamp{font-size:12px;margin-top:10px}
+    @media(max-width:740px){.stats{grid-template-columns:repeat(2,1fr)}.heading{display:none}.assignment{grid-template-columns:1fr auto;gap:8px}.assignment .course{grid-column:1}.assignment .due{grid-column:1}.assignment .status{grid-column:2;grid-row:1/4}h1{font-size:26px}}
+  </style>
+</head>
+<body><main>
+  <header><div><h1>Assignment Dashboard</h1><p>Your Canvas workload, in one place.</p><p id="timestamp"></p></div><button id="refresh">↻ Refresh Canvas</button></header>
+  <section class="stats"><div class="stat"><strong id="outstanding">—</strong><span>Outstanding</span></div><div class="stat"><strong id="overdue">—</strong><span>Overdue</span></div><div class="stat"><strong id="week">—</strong><span>Due in 7 days</span></div><div class="stat"><strong id="courses">—</strong><span>Active courses</span></div></section>
+  <div class="controls"><input id="search" aria-label="Search assignments" placeholder="Search assignments or courses…"><select id="filter" aria-label="Status filter"><option value="open">Outstanding</option><option value="all">All</option><option value="done">Submitted / excused</option><option value="overdue">Overdue</option></select><select id="sort" aria-label="Sort"><option value="due">Soonest deadline</option><option value="course">Course name</option></select></div>
+  <p id="message" class="error" role="alert"></p><div class="panel"><div class="heading"><span>Assignment</span><span>Course</span><span>Due date</span><span>Status</span></div><div id="list"><div class="empty">Loading assignments…</div></div></div>
+</main>
+<script>
+let assignments=[];let now=new Date();
+const $=id=>document.getElementById(id);const escapeHTML=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+function dueDate(a){return a.due_at?new Date(a.due_at):null}
+function completed(a){return a.submitted||a.excused}
+function overdue(a){let d=dueDate(a);return !completed(a)&&d&&d<now}
+function status(a){if(a.excused)return ['Excused','done'];if(a.submitted)return ['Submitted','done'];if(overdue(a))return ['Overdue','overdue'];let d=dueDate(a);if(d&&d-now<86400000&&d>=now)return ['Due soon','soon'];return ['Not submitted','']}
+function safeURL(s){try{const u=new URL(s);return ['https:','http:'].includes(u.protocol)?u.href:'#'}catch{return '#'}}
+function render(){let q=$('search').value.toLowerCase(),filter=$('filter').value;let rows=assignments.filter(a=>`${a.name} ${a.course}`.toLowerCase().includes(q));if(filter==='open')rows=rows.filter(a=>!completed(a));if(filter==='done')rows=rows.filter(completed);if(filter==='overdue')rows=rows.filter(overdue);rows.sort((a,b)=>$('sort').value==='course'?a.course.localeCompare(b.course):(dueDate(a)?.getTime()??Infinity)-(dueDate(b)?.getTime()??Infinity));$('list').innerHTML=rows.length?rows.map(a=>{let [label,cls]=status(a),d=dueDate(a);return `<div class="assignment"><div><a href="${escapeHTML(safeURL(a.url))}" target="_blank" rel="noopener noreferrer">${escapeHTML(a.name)}</a></div><div class="course">${escapeHTML(a.course)}</div><div class="due ${d?'':'muted'}">${d?escapeHTML(d.toLocaleString(undefined,{dateStyle:'medium',timeStyle:'short'})):'No due date'}</div><div class="status"><span class="pill ${cls}">${label}</span></div></div>`}).join(''):'<div class="empty">No assignments match the current filters.</div>'}
+async function load(){now=new Date();$('refresh').disabled=true;$('message').textContent='';try{let res=await fetch('/api/dashboard',{cache:'no-store'}),data=await res.json();if(!res.ok)throw Error(data.error||'Unable to load Canvas');assignments=data.assignments;$('courses').textContent=data.courses;$('outstanding').textContent=assignments.filter(a=>!completed(a)).length;$('overdue').textContent=assignments.filter(overdue).length;$('week').textContent=assignments.filter(a=>{let d=dueDate(a);return !completed(a)&&d&&d>=now&&d-now<=7*86400000}).length;$('timestamp').textContent=`Last refreshed: ${new Date(data.updated_at).toLocaleString()}`;$('message').textContent=(data.warnings||[]).join(' • ');render()}catch(e){$('message').textContent=e.message;$('list').innerHTML='<div class="empty">Could not load assignments.</div>'}finally{$('refresh').disabled=false}}
+['search','filter','sort'].forEach(id=>$(id).addEventListener(id==='search'?'input':'change',render));$('refresh').addEventListener('click',load);load();
+</script></body></html>
